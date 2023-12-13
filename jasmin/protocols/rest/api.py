@@ -21,6 +21,7 @@ class JasminHttpApiProxy:
     def call_jasmin(self, url, params=None):
         try:
             r = requests.get('%s/%s' % (old_api_uri, url), params=params)
+            # r = requests.get('%s/%s' % ('http://jasmin', url), params=params)
         except requests.exceptions.ConnectionError as e:
             raise HTTPInternalServerError('Jasmin httpapi connection error',
                                           'Could not connect to Jasmin http api (%s): %s' % (old_api_uri, e))

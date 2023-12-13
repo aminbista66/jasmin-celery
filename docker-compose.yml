@@ -53,3 +53,6 @@ services:
           memory: 256M
     security_opt:
       - no-new-privileges:true
+
+
+    # command: bash -c "celery -A jasmin.protocols.rest.tasks worker -l INFO -c 4 --autoscale=10,3"

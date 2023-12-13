@@ -14,7 +14,7 @@ services:
       timeout: 5s
 
   rabbit-mq:
-    image: rabbitmq:3.11.3-management-alpine  # Use the RabbitMQ image with the management plugin
+    image: rabbitmq:3.11.3-alpine
     restart: always
     volumes:
       - rabbitmq:/var/lib/rabbitmq
@@ -25,8 +25,55 @@ services:
       interval: 30s
       timeout: 30s
       retries: 3
+
+  celery-worker:
+    build:
+      context: ./
+      dockerfile: ./docker/Dockerfile.celery
+    image: jasmin:celery-worker
+    restart: always
+    networks:
+      - jasmin
+    depends_on:
+      - rabbit-mq
+    environment:
+      REDIS_HOST: ${REDIS_CLIENT_HOST:-redis}
+      REDIS_PORT: ${REDIS_CLIENT_PORT:-6379}
+      AMQP_BROKER_HOST: ${AMQP_BROKER_HOST:-rabbit-mq}
+      AMQP_BROKER_PORT: ${AMQP_BROKER_PORT:-5672}
+
+  celery-beat:
+    build:
+      context: ./
+      dockerfile: ./docker/Dockerfile.celery
+    image: jasmin:celery-beat
+    restart: always
+    networks:
+      - jasmin
+    depends_on:
+      - rabbit-mq
+    environment:
+      REDIS_HOST: ${REDIS_CLIENT_HOST:-redis}
+      REDIS_PORT: ${REDIS_CLIENT_PORT:-6379}
+      AMQP_BROKER_HOST: ${AMQP_BROKER_HOST:-rabbit-mq}
+      AMQP_BROKER_PORT: ${AMQP_BROKER_PORT:-5672}
+    healthcheck:
+      test: ["CMD", "celery", "-A", "jasmin.protocols.rest.tasks", "inspect", "ping"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  flower:
+    image: mher/flower
+    restart: always
+    networks:
+      - jasmin
+    depends_on:
+      - celery-worker
     ports:
-      - '${FORWARD_RABBITMQ_MANAGEMENT_PORT:-15672}:15672'
+      - '${FORWARD_FLOWER_PORT:-5555}:5555'
+    environment:
+      CELERY_BROKER: ${CELERY_BROKER_URL:-amqp://guest:guest@rabbit-mq:5672/}
 
   jasmin:
     build:
@@ -51,6 +98,10 @@ services:
         condition: service_healthy
       rabbit-mq:
         condition: service_healthy
+      celery-worker:
+        condition: service_healthy
+      celery-beat:
+        condition: service_healthy
     environment:
       REDIS_CLIENT_HOST: ${REDIS_CLIENT_HOST:-redis}
       REDIS_CLIENT_PORT: ${REDIS_CLIENT_PORT:-6379}
@@ -58,7 +109,6 @@ services:
       AMQP_BROKER_PORT: ${AMQP_BROKER_PORT:-5672}
       ENABLE_PUBLISH_SUBMIT_SM_RESP: ${ENABLE_PUBLISH_SUBMIT_SM_RESP:-1}
       RESTAPI_MODE: ${RESTAPI_MODE:-0}
-      CELERY_BROKER_URL: pyamqp://guest:guest@rabbit-mq:5672//
 
   jasmin-restapi:
     build:
@@ -76,53 +126,14 @@ services:
       - jasmin
     depends_on:
       - jasmin
+      - celery-worker
     environment:
       REDIS_CLIENT_HOST: ${REDIS_CLIENT_HOST:-redis}
       REDIS_CLIENT_PORT: ${REDIS_CLIENT_PORT:-6379}
       AMQP_BROKER_HOST: ${AMQP_BROKER_HOST:-rabbit-mq}
       AMQP_BROKER_PORT: ${AMQP_BROKER_PORT:-5672}
-      ENABLE_PUBLISH_SUBMIT_SM_RESP: ${ENABLE_PUBLISH_SUBMIT_SM_RESP:-1}
       RESTAPI_MODE: ${RESTAPI_MODE:-1}
       RESTAPI_OLD_HTTP_HOST: ${RESTAPI_OLD_HTTP_HOST:-jasmin}
-
-  celery-flower:
-    image: mher/flower:0.9.7
-    restart: always
-    ports:
-      - '${FORWARD_FLOWER_PORT:-5555}:5555'
-    networks:
-      - jasmin
-    depends_on:
-      - jasmin
-    environment:
-      - CELERY_BROKER_URL=pyamqp://guest:guest@rabbit-mq:5672//  # Update with your actual broker URL
-      - FLOWER_PORT=5555
-      - FLOWER_BASIC_AUTH=user:password
-
-  celery-worker:
-    build:
-      context: ./
-      dockerfile: ./docker/Dockerfile.restapi.alpine
-    image: jasmin:celery-worker
-    restart: always
-    networks:
-      - jasmin
-    depends_on:
-      - redis
-      - rabbit-mq
-      - jasmin
-    environment:
-      REDIS_CLIENT_HOST: redis
-      REDIS_CLIENT_PORT: ${REDIS_CLIENT_PORT:-6379}
-      CELERY_RESULT_BACKEND: redis://redis:6379
-      AMQP_BROKER_HOST: ${AMQP_BROKER_HOST:-rabbit-mq}
-      AMQP_BROKER_PORT: ${AMQP_BROKER_PORT:-5672}
-      ENABLE_PUBLISH_SUBMIT_SM_RESP: ${ENABLE_PUBLISH_SUBMIT_SM_RESP:-0}
-      RESTAPI_MODE: ${RESTAPI_MODE:-0}
-      CELERY_BROKER_URL: pyamqp://guest:guest@rabbit-mq:5672//
-      RESTAPI_OLD_HTTP_HOST: ${RESTAPI_OLD_HTTP_HOST:-jasmin}
-      REPLACE_HTTP_OLD_URI: ${REPLACE_HTTP_OLD_URI:-1}
-    command: celery -A jasmin.protocols.rest.tasks worker -l INFO -c 4 --autoscale=10,3
 
 networks:
   jasmin:

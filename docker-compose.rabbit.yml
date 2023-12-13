@@ -26,7 +26,7 @@ services:
       timeout: 30s
       retries: 3
     ports:
-      - '${FORWARD_RABBITMQ_MANAGEMENT_PORT:-15672}:15672'
+      - '${FORWARD_RABBITMQ_MANAGEMENT_PORT:-15672}:15672'  # Expose RabbitMQ Management Console
 
   jasmin:
     build:
@@ -58,7 +58,7 @@ services:
       AMQP_BROKER_PORT: ${AMQP_BROKER_PORT:-5672}
       ENABLE_PUBLISH_SUBMIT_SM_RESP: ${ENABLE_PUBLISH_SUBMIT_SM_RESP:-1}
       RESTAPI_MODE: ${RESTAPI_MODE:-0}
-      CELERY_BROKER_URL: pyamqp://guest:guest@rabbit-mq:5672//
+  
 
   jasmin-restapi:
     build:
@@ -81,48 +81,42 @@ services:
       REDIS_CLIENT_PORT: ${REDIS_CLIENT_PORT:-6379}
       AMQP_BROKER_HOST: ${AMQP_BROKER_HOST:-rabbit-mq}
       AMQP_BROKER_PORT: ${AMQP_BROKER_PORT:-5672}
-      ENABLE_PUBLISH_SUBMIT_SM_RESP: ${ENABLE_PUBLISH_SUBMIT_SM_RESP:-1}
       RESTAPI_MODE: ${RESTAPI_MODE:-1}
       RESTAPI_OLD_HTTP_HOST: ${RESTAPI_OLD_HTTP_HOST:-jasmin}
 
-  celery-flower:
-    image: mher/flower:0.9.7
-    restart: always
-    ports:
-      - '${FORWARD_FLOWER_PORT:-5555}:5555'
-    networks:
-      - jasmin
-    depends_on:
-      - jasmin
-    environment:
-      - CELERY_BROKER_URL=pyamqp://guest:guest@rabbit-mq:5672//  # Update with your actual broker URL
-      - FLOWER_PORT=5555
-      - FLOWER_BASIC_AUTH=user:password
-
-  celery-worker:
+  celery:
+    image: "python:3.8"
     build:
-      context: ./
-      dockerfile: ./docker/Dockerfile.restapi.alpine
-    image: jasmin:celery-worker
-    restart: always
-    networks:
-      - jasmin
+      context: .
+      dockerfile: ./docker/Dockerfile.celery
+    volumes:
+      - ./app:/app
     depends_on:
-      - redis
       - rabbit-mq
-      - jasmin
     environment:
-      REDIS_CLIENT_HOST: redis
-      REDIS_CLIENT_PORT: ${REDIS_CLIENT_PORT:-6379}
-      CELERY_RESULT_BACKEND: redis://redis:6379
-      AMQP_BROKER_HOST: ${AMQP_BROKER_HOST:-rabbit-mq}
-      AMQP_BROKER_PORT: ${AMQP_BROKER_PORT:-5672}
-      ENABLE_PUBLISH_SUBMIT_SM_RESP: ${ENABLE_PUBLISH_SUBMIT_SM_RESP:-0}
-      RESTAPI_MODE: ${RESTAPI_MODE:-0}
-      CELERY_BROKER_URL: pyamqp://guest:guest@rabbit-mq:5672//
-      RESTAPI_OLD_HTTP_HOST: ${RESTAPI_OLD_HTTP_HOST:-jasmin}
-      REPLACE_HTTP_OLD_URI: ${REPLACE_HTTP_OLD_URI:-1}
-    command: celery -A jasmin.protocols.rest.tasks worker -l INFO -c 4 --autoscale=10,3
+      - BROKER_URL=pyamqp://guest:guest@rabbit-mq//
+      - CELERY_RESULT_BACKEND=rpc://
+
+  celery-beat:
+    image: "python:3.8"
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.celery
+    volumes:
+      - ./app:/app
+    depends_on:
+      - rabbit-mq
+      - celery
+    command: celery -A jasmin.protocols.rest.tasks beat --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+  flower:
+    image: "mher/flower"
+    ports:
+      - "5555:5555"
+    depends_on:
+      - celery
+    command: "flower --app=jasmin.protocols.rest.tasks --broker=pyamqp://guest:guest@rabbit-mq//"
+
 
 networks:
   jasmin:

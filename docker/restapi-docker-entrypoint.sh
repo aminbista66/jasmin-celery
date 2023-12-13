@@ -20,6 +20,11 @@ if [ "$RESTAPI_MODE" = 1 ]; then
   sed -i "/# CELERY/,/result_backend/  s/result_backend.*/result_backend = 'redis:\/\/:@$REDIS_CLIENT_HOST:$REDIS_CLIENT_PORT\/1'/" ${jasminRoot}/protocols/rest/config.py 
   exec gunicorn -b 0.0.0.0:8080 jasmin.protocols.rest:api --access-logfile /var/log/jasmin/rest-api.access.log --disable-redirect-access-to-syslog
 else
+  if [ "$REPLACE_HTTP_OLD_URI" = 1 ]; then
+    jasminRoot=$(python -c "import jasmin as _; print(_.__path__[0])")
+    # update jasmin-restAPI config
+    sed -i "/# RESTAPI/,/old_api_uri/  s/old_api_uri.*/old_api_uri = 'http:\/\/$RESTAPI_OLD_HTTP_HOST:1401'/" ${jasminRoot}/protocols/rest/config.py 
+  fi
   if [ "$ENABLE_PUBLISH_SUBMIT_SM_RESP" = 1 ]; then
     # Enable publish_submit_sm_resp
     echo 'Enabling publish_submit_sm_resp'

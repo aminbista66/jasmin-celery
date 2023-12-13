@@ -2,6 +2,7 @@
 
 import logging
 from jasmin.config import LOG_PATH
+import os 
 
 # RESTAPI
 old_api_uri = 'http://127.0.0.1:1401'
@@ -26,8 +27,8 @@ enable_utc = True
 # Will push messages back to Jasmin's http api with a maximum throughput *per worker*
 # Please consider this is a *per worker* throughput !
 # Set to zero (0) to disable throughput control
-http_throughput_per_worker = 8
+http_throughput_per_worker = 16
 # When set to True, the batch executor will consider Jasmin's response time to
 # control the batch throughput, slower response time will slow down the throughput
 # and vice-versa
-smart_qos = True
+smart_qos = False
